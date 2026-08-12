@@ -1,0 +1,116 @@
+name: Auto Publish Songs to YouTube
+
+on:
+  schedule:
+    # Run once daily at 8:00 AM UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  publish-song:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check required secrets
+        run: |
+          echo "Checking required environment variables..."
+          echo ""
+
+          required_secrets=(
+            "GOOGLE_DRIVE_AUDIO_FOLDER_ID"
+            "GOOGLE_DRIVE_IMAGE_FOLDER_ID"
+          )
+
+          optional_secrets=(
+            "YT_CLIENT_ID"
+            "YT_CLIENT_SECRET"
+            "YT_REFRESH_TOKEN"
+          )
+
+          missing=0
+          for secret in "${required_secrets[@]}"; do
+            if [ -z "${!secret}" ]; then
+              echo "Missing: $secret"
+              missing=1
+            else
+              echo "Found: $secret"
+            fi
+          done
+
+          for secret in "${optional_secrets[@]}"; do
+            if [ -z "${!secret}" ]; then
+              echo "Optional (not set): $secret"
+            else
+              echo "Found: $secret"
+            fi
+          done
+
+          echo ""
+          if [ $missing -eq 1 ]; then
+            echo "Required secrets are missing! Pipeline cannot continue."
+            exit 1
+          fi
+
+          echo "All required secrets present."
+
+      - name: Run automation pipeline
+        env:
+          # Google Drive - Audio folder
+          GOOGLE_DRIVE_AUDIO_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_AUDIO_FOLDER_ID }}
+          # Google Drive - Image folder
+          GOOGLE_DRIVE_IMAGE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_IMAGE_FOLDER_ID }}
+          # Google Service Account
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
+          # YouTube OAuth
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          echo "Starting SPYNX automation pipeline..."
+          echo "Audio Folder: $GOOGLE_DRIVE_AUDIO_FOLDER_ID"
+          echo "Image Folder: $GOOGLE_DRIVE_IMAGE_FOLDER_ID"
+          python auto_pipeline.py
+          exit_code=$?
+
+          if [ $exit_code -ne 0 ]; then
+            echo "Pipeline failed with exit code $exit_code"
+            exit $exit_code
+          fi
+
+          echo "Pipeline completed successfully"
+
+      - name: Commit published songs log
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          git add published_songs.json 2>/dev/null || true
+
+          if ! git diff --staged --quiet; then
+            git commit -m "Update published songs log [skip ci]"
+            git push
+            echo "Committed published_songs.json"
+          else
+            echo "No changes to commit"
+          fi

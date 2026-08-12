@@ -1,0 +1,23 @@
+# Core dependencies
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Google Drive
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.101.0
+
+# YouTube
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.101.0
+
+# Audio tag reading
+mutagen>=1.47.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Utilities
+tqdm>=4.66.0
