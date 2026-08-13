@@ -1,6 +1,6 @@
 """
-Text Overlay Generator - Perfectly Centered & Equidistant Typography (spyionx)
-Mathematical pixel-perfect dead-center alignment with anchor='mm' and equidistant margins.
+Text Overlay Generator - Clean & Minimalist Typography (spyionx)
+Creates crisp, centered, equidistant title cards without extra filler text.
 """
 import os
 import sys
@@ -10,21 +10,21 @@ from font_manager import get_font
 
 def create_viral_centered_overlay(song_name, channel_name="sypionx", width=1920, height=1080):
     """
-    Equidistant & Dead-Centered Typography:
-    1. PIL anchor='mm' for pixel-perfect horizontal & vertical center alignment
-    2. Equidistant top, bottom, left, and right margins
-    3. Refined font sizes (42px title, 16px subtitle)
+    Clean Centered Typography:
+    1. Channel Name: SYPIONX (Clean, 0 filler words)
+    2. Song Name: Pure centered song title
+    3. Mathematical dead-center alignment (anchor='mm')
     """
     img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
 
-    # Refined Fonts
-    title_font = get_font("Outfit-Bold.ttf", 42)
+    # Refined Clean Fonts
+    title_font = get_font("Outfit-Bold.ttf", 44)
     subtitle_font = get_font("Montserrat-Bold.ttf", 16)
 
-    subtitle_text = f"{channel_name.upper()}   •   OFFICIAL RELEASE"
-    title_text = song_name.upper()
+    subtitle_text = channel_name.upper().strip()
+    title_text = song_name.upper().strip()
 
-    # Exact bounding box measurements
+    # Bounding box measurements
     t_bbox = title_font.getbbox(title_text)
     t_w = t_bbox[2] - t_bbox[0]
     t_h = t_bbox[3] - t_bbox[1]
@@ -35,10 +35,10 @@ def create_viral_centered_overlay(song_name, channel_name="sypionx", width=1920,
 
     max_w = max(t_w, s_w)
 
-    # Equidistant padding and spacing
+    # Equidistant padding
     pad_h = 48   # Left & Right padding
-    pad_v = 24   # Top & Bottom padding
-    gap_v = 14   # Vertical gap between subtitle and main song title
+    pad_v = 22   # Top & Bottom padding
+    gap_v = 12   # Gap between channel name & song title
 
     card_w = max_w + pad_h * 2
     card_h = s_h + gap_v + t_h + pad_v * 2
@@ -53,23 +53,23 @@ def create_viral_centered_overlay(song_name, channel_name="sypionx", width=1920,
     shadow = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     s_draw = ImageDraw.Draw(shadow)
     box_rect = [card_x1, card_y1, card_x2, card_y2]
-    s_draw.rounded_rectangle(box_rect, radius=16, fill=(0, 0, 0, 170))
+    s_draw.rounded_rectangle(box_rect, radius=14, fill=(0, 0, 0, 160))
     shadow = shadow.filter(ImageFilter.GaussianBlur(10))
     img = Image.alpha_composite(img, shadow)
 
     draw = ImageDraw.Draw(img)
 
-    # 2. Sleek Equidistant Dark Capsule Badge
-    draw.rounded_rectangle(box_rect, radius=14, fill=(12, 14, 22, 140), outline=(255, 200, 40, 150), width=2)
+    # 2. Sleek Dark Capsule Badge
+    draw.rounded_rectangle(box_rect, radius=12, fill=(12, 14, 22, 135), outline=(255, 200, 40, 140), width=2)
 
-    # 3. Y positions with exact vertical center distribution
+    # 3. Y positions
     sub_center_y = card_y1 + pad_v + s_h // 2
     title_center_y = sub_center_y + s_h // 2 + gap_v + t_h // 2
 
-    # 4. Render Subtitle with PIL anchor='mm' (Middle-Middle Dead Center)
+    # 4. Render Channel Name (SYPIONX)
     draw.text((cx, sub_center_y), subtitle_text, font=subtitle_font, fill=(255, 200, 40, 240), anchor="mm")
 
-    # 5. Render Main Song Title with PIL anchor='mm' (Middle-Middle Dead Center)
+    # 5. Render Main Song Title
     for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
         draw.text((cx + dx, title_center_y + dy), title_text, font=title_font, fill=(0, 0, 0, 230), anchor="mm")
     draw.text((cx, title_center_y), title_text, font=title_font, fill=(255, 255, 255, 255), anchor="mm")
@@ -79,9 +79,9 @@ def create_viral_centered_overlay(song_name, channel_name="sypionx", width=1920,
 
 def create_stretched_text_image(text, output_path, width=1920, height=1080, preset="modern_glass", channel_name="sypionx", **kwargs):
     """
-    Main entry point for generating perfectly centered & equidistant text overlay image.
+    Main entry point for generating clean centered text overlay image.
     """
-    print(f"[TextOverlay] Generating equidistant dead-centered overlay for song: '{text}'")
+    print(f"[TextOverlay] Generating clean centered overlay for song: '{text}'")
     img = create_viral_centered_overlay(text, channel_name, width, height)
 
     img.save(output_path, 'PNG')
