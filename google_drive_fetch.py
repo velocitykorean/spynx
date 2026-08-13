@@ -1,11 +1,13 @@
 """
-Google Drive Integration Module
+Google Drive Integration Module (spyionx)
 Fetch audio (MP3) and image files from separate Google Drive folders.
 Matches files by sorted position (1st audio = 1st image, etc.)
+Supports Weighted Random Repost Mode when all songs have been published once.
 """
 import os
 import json
 import sys
+import random
 import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
@@ -21,11 +23,13 @@ GOOGLE_DRIVE_IMAGE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_IMAGE_FOLDER_ID")
 GOOGLE_SERVICE_ACCOUNT_KEY = os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY")
 LOCAL_AUDIO_DIR = os.getenv("LOCAL_AUDIO_DIR", "Audio")
 LOCAL_IMAGE_DIR = os.getenv("LOCAL_IMAGE_DIR", "Images")
+ALLOW_REPOST = os.getenv("ALLOW_REPOST", "true").lower() == "true"
 
 PUBLISHED_LOG = "published_songs.json"
 
 
 def get_published_songs():
+    """Get list of already published song names."""
     if os.path.exists(PUBLISHED_LOG):
         with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
             try:
@@ -34,6 +38,22 @@ def get_published_songs():
             except json.JSONDecodeError:
                 return []
     return []
+
+
+def get_repost_counts():
+    """Count how many times each song has been published."""
+    if os.path.exists(PUBLISHED_LOG):
+        with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+                counts = {}
+                for item in data:
+                    sname = item.get('song_name', '')
+                    counts[sname] = counts.get(sname, 0) + 1
+                return counts
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
 
 def get_drive_service():
@@ -109,7 +129,8 @@ def download_file(service, file_info, local_path):
 def get_next_unpublished_pair(published):
     """
     Find next unpublished song by matching audio + image by sorted position.
-    Audio and image files are matched 1-to-1 by their sorted order.
+    If all songs have been published once, uses Weighted Random Repost Selection
+    to pair a random song with a random background image so daily publishing never stops.
     """
     service = get_drive_service()
     if not service:
@@ -121,8 +142,6 @@ def get_next_unpublished_pair(published):
         return None
 
     print(f"\nFound {len(audio_files)} audio file(s) in Google Drive.")
-    for af in audio_files:
-        print(f"  - {af['name']}")
 
     image_files = list_drive_files(service, GOOGLE_DRIVE_IMAGE_FOLDER_ID,
                                    ["image/jpeg", "image/png", "image/webp"])
@@ -131,20 +150,17 @@ def get_next_unpublished_pair(published):
         return None
 
     print(f"Found {len(image_files)} image file(s) in Google Drive.")
-    for im in image_files:
-        print(f"  - {im['name']}")
 
     # Match by position: audio[i] pairs with image[i]
     pair_count = min(len(audio_files), len(image_files))
-    print(f"\nMatching {pair_count} audio-image pairs by position...")
 
+    # Phase 1: Try finding an unpublished song
     for i in range(pair_count):
         audio_info = audio_files[i]
         image_info = image_files[i]
         song_name = audio_info['name']
 
         if song_name in published:
-            print(f"Skipping {song_name} - already published")
             continue
 
         # Download audio
@@ -161,12 +177,49 @@ def get_next_unpublished_pair(published):
         if not download_file(service, image_info, image_path):
             continue
 
-        # Song index is position + 1 (for titles file lookup)
         song_index = i + 1
         print(f"\nSelected pair {song_index}: {song_name}")
         return audio_path, image_path, song_index
 
-    print("\nAll songs have been published.")
+    # Phase 2: All songs have been published - REPOST / RECYCLE MODE
+    if ALLOW_REPOST:
+        print("\n🔄 REPOST MODE: All songs published once. Selecting weighted random song + random image...")
+        repost_counts = get_repost_counts()
+
+        # Build weighted choices (songs posted fewer times get higher weight)
+        weighted_indices = []
+        weights = []
+        for i in range(pair_count):
+            sname = audio_files[i]['name']
+            count = repost_counts.get(sname, 0)
+            weight = max(1, 1000 // (3 ** min(count, 6)))
+            weighted_indices.append(i)
+            weights.append(weight)
+
+        selected_idx = random.choices(weighted_indices, weights=weights, k=1)[0]
+
+        # Pick random background image from available images
+        random_image_info = random.choice(image_files)
+        selected_audio_info = audio_files[selected_idx]
+
+        song_name = selected_audio_info['name']
+        print(f"  🎲 Selected for repost: Song #{selected_idx + 1} '{song_name}' with Image '{random_image_info['name']}'")
+
+        # Download audio
+        Path(LOCAL_AUDIO_DIR).mkdir(parents=True, exist_ok=True)
+        audio_path = os.path.join(LOCAL_AUDIO_DIR, selected_audio_info['name'])
+        if not download_file(service, selected_audio_info, audio_path):
+            return None
+
+        # Download image
+        Path(LOCAL_IMAGE_DIR).mkdir(parents=True, exist_ok=True)
+        image_path = os.path.join(LOCAL_IMAGE_DIR, random_image_info['name'])
+        if not download_file(service, random_image_info, image_path):
+            return None
+
+        return audio_path, image_path, selected_idx + 1
+
+    print("\nAll songs have been published (repost disabled).")
     return None
 
 
