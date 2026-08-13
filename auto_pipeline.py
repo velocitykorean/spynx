@@ -1,7 +1,7 @@
 """
 Main Automation Pipeline
 1. Fetch NEXT unpublished audio + image pair from Google Drive
-2. Parse title/description from text file
+2. Match audio filename to title/description from text file
 3. Combine image + audio into video (FFmpeg)
 4. Upload to YouTube with correct metadata
 """
@@ -21,7 +21,6 @@ TITLES_FILE = "titles_descriptions.txt"
 
 
 def get_published_songs():
-    """Get list of already published song names."""
     if os.path.exists(PUBLISHED_LOG):
         with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
             try:
@@ -33,8 +32,6 @@ def get_published_songs():
 
 
 def mark_as_published(song_name, metadata):
-    """Record a song as published."""
-    published = get_published_songs()
     if os.path.exists(PUBLISHED_LOG):
         with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
             try:
@@ -54,10 +51,6 @@ def mark_as_published(song_name, metadata):
 
 
 def run_pipeline():
-    """
-    Complete automation pipeline:
-    Google Drive (audio + image) → Combine into video → Upload to YouTube
-    """
     print("\n" + "=" * 60)
     print("SPYNX YOUTUBE AUTOMATION PIPELINE")
     print("=" * 60 + "\n")
@@ -74,31 +67,38 @@ def run_pipeline():
         return
 
     audio_path, image_path, song_index = pair
-    print(f"\nStep 1 complete: Audio={audio_path}, Image={image_path}, Index={song_index}")
+    song_filename = os.path.basename(audio_path)
+    print(f"\nStep 1 complete: Audio={song_filename}")
 
-    # Step 2: Get title/description from text file
+    # Step 2: Match audio filename to title/description
     print("\nSTEP 2: Loading title and description...")
-    from titles_descriptions_parser import get_song_metadata
+    from titles_descriptions_parser import get_song_metadata_by_name
 
-    metadata = get_song_metadata(song_index, TITLES_FILE)
+    metadata = get_song_metadata_by_name(song_filename, TITLES_FILE)
     title = metadata['title']
     description = metadata['description']
 
     print(f"Title: {title}")
     print(f"Description preview: {description[:120]}...")
 
-    # Step 3: Combine image + audio into video
-    print("\nSTEP 3: Creating video from image + audio...")
+    # Step 3: Combine image + audio into video + thumbnail
+    print("\nSTEP 3: Creating video with effects + thumbnail...")
     from process_videos import process_single_song
 
-    song_name = os.path.basename(audio_path)
-    video_path = process_single_song(image_path, audio_path, song_name)
+    # Use the matched song title (without genre suffix) for display
+    display_name = metadata['song_name'] if 'song_name' in metadata else title.split('|')[0].strip()
+    video_path = process_single_song(image_path, audio_path, song_filename, display_name)
 
     if not video_path or not os.path.exists(video_path):
         print("\nVideo creation failed!")
         sys.exit(1)
 
-    print(f"\nStep 3 complete: Video created at {video_path}")
+    # Check for thumbnail
+    thumb_path = video_path.replace('.mp4', '_thumb.jpg')
+    if os.path.exists(thumb_path):
+        print(f"Thumbnail: {thumb_path}")
+
+    print(f"\nStep 3 complete: Video + thumbnail created")
 
     # Step 4: Upload to YouTube
     print("\nSTEP 4: Uploading to YouTube...")
@@ -116,7 +116,7 @@ def run_pipeline():
 
     # Step 5: Record as published
     print("\nSTEP 5: Recording song as published...")
-    mark_as_published(song_name, {
+    mark_as_published(song_filename, {
         "title": title,
         "description": description,
         "song_index": song_index,

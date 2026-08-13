@@ -23,14 +23,21 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment variables
+# Environment variables & Credentials
 .env
+service_account.json
+published_songs.json
 
-# Downloaded files
+# Downloaded files & Output media
 Audio/
 Images/
 Processed_Videos/
 Published_Videos/
+*.mp4
+*.png
+*.jpg
+_temp_*
+test_*
 
 # Logs
 *.log
@@ -44,3 +51,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
