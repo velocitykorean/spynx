@@ -11,6 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    env:
+      GOOGLE_DRIVE_AUDIO_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_AUDIO_FOLDER_ID }}
+      GOOGLE_DRIVE_IMAGE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_IMAGE_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -39,9 +47,7 @@ jobs:
           required_secrets=(
             "GOOGLE_DRIVE_AUDIO_FOLDER_ID"
             "GOOGLE_DRIVE_IMAGE_FOLDER_ID"
-          )
-
-          optional_secrets=(
+            "GOOGLE_SERVICE_ACCOUNT_KEY"
             "YT_CLIENT_ID"
             "YT_CLIENT_SECRET"
             "YT_REFRESH_TOKEN"
@@ -57,14 +63,6 @@ jobs:
             fi
           done
 
-          for secret in "${optional_secrets[@]}"; do
-            if [ -z "${!secret}" ]; then
-              echo "Optional (not set): $secret"
-            else
-              echo "Found: $secret"
-            fi
-          done
-
           echo ""
           if [ $missing -eq 1 ]; then
             echo "Required secrets are missing! Pipeline cannot continue."
@@ -74,24 +72,13 @@ jobs:
           echo "All required secrets present."
 
       - name: Run automation pipeline
-        env:
-          # Google Drive - Audio folder
-          GOOGLE_DRIVE_AUDIO_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_AUDIO_FOLDER_ID }}
-          # Google Drive - Image folder
-          GOOGLE_DRIVE_IMAGE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_IMAGE_FOLDER_ID }}
-          # Google Service Account
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-
-          # YouTube OAuth
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
           echo "Starting SPYNX automation pipeline..."
           echo "Audio Folder: $GOOGLE_DRIVE_AUDIO_FOLDER_ID"
           echo "Image Folder: $GOOGLE_DRIVE_IMAGE_FOLDER_ID"
           python auto_pipeline.py
           exit_code=$?
+
 
           if [ $exit_code -ne 0 ]; then
             echo "Pipeline failed with exit code $exit_code"
