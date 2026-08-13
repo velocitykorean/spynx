@@ -92,7 +92,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
-          git add published_songs.json 2>/dev/null || true
+          git add -f published_songs.json
 
           if ! git diff --staged --quiet; then
             git commit -m "Update published songs log [skip ci]"
@@ -101,3 +101,4 @@ jobs:
           else
             echo "No changes to commit"
           fi
+

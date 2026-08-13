@@ -26,7 +26,7 @@ wheels/
 # Environment variables & Credentials
 .env
 service_account.json
-published_songs.json
+
 
 # Downloaded files & Output media
 Audio/
