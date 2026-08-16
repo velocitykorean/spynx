@@ -6,10 +6,15 @@ on:
     - cron: '0 8 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   publish-song:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     env:
       GOOGLE_DRIVE_AUDIO_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_AUDIO_FOLDER_ID }}
@@ -21,10 +26,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -79,7 +87,6 @@ jobs:
           python auto_pipeline.py
           exit_code=$?
 
-
           if [ $exit_code -ne 0 ]; then
             echo "Pipeline failed with exit code $exit_code"
             exit $exit_code
@@ -88,17 +95,18 @@ jobs:
           echo "Pipeline completed successfully"
 
       - name: Commit published songs log
+        if: always()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
+          git pull origin main --rebase || true
           git add -f published_songs.json
 
           if ! git diff --staged --quiet; then
             git commit -m "Update published songs log [skip ci]"
-            git push
-            echo "Committed published_songs.json"
+            git push origin main
+            echo "Committed and pushed published_songs.json successfully"
           else
             echo "No changes to commit"
           fi
-

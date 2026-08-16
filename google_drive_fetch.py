@@ -34,7 +34,7 @@ def get_published_songs():
         with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
-                return [item.get('song_name', '') for item in data]
+                return [item.get('song_name', '').strip() for item in data if item.get('song_name')]
             except json.JSONDecodeError:
                 return []
     return []
@@ -48,8 +48,9 @@ def get_repost_counts():
                 data = json.load(f)
                 counts = {}
                 for item in data:
-                    sname = item.get('song_name', '')
-                    counts[sname] = counts.get(sname, 0) + 1
+                    sname = item.get('song_name', '').strip().lower()
+                    if sname:
+                        counts[sname] = counts.get(sname, 0) + 1
                 return counts
             except json.JSONDecodeError:
                 return {}
@@ -154,13 +155,17 @@ def get_next_unpublished_pair(published):
     # Match by position: audio[i] pairs with image[i]
     pair_count = min(len(audio_files), len(image_files))
 
+    published_lower = [p.lower().strip() for p in published]
+    print(f"\nAlready published ({len(published_lower)} songs): {published}")
+
     # Phase 1: Try finding an unpublished song
     for i in range(pair_count):
         audio_info = audio_files[i]
         image_info = image_files[i]
-        song_name = audio_info['name']
+        song_name = audio_info['name'].strip()
 
-        if song_name in published:
+        if song_name.lower() in published_lower:
+            print(f"Skipping [{i+1}] {song_name} - already published")
             continue
 
         # Download audio
@@ -178,7 +183,7 @@ def get_next_unpublished_pair(published):
             continue
 
         song_index = i + 1
-        print(f"\nSelected pair {song_index}: {song_name}")
+        print(f"\n✅ Selected NEW unpublished pair {song_index}: {song_name} with Image: {image_info['name']}")
         return audio_path, image_path, song_index
 
     # Phase 2: All songs have been published - REPOST / RECYCLE MODE
@@ -190,7 +195,7 @@ def get_next_unpublished_pair(published):
         weighted_indices = []
         weights = []
         for i in range(pair_count):
-            sname = audio_files[i]['name']
+            sname = audio_files[i]['name'].strip().lower()
             count = repost_counts.get(sname, 0)
             weight = max(1, 1000 // (3 ** min(count, 6)))
             weighted_indices.append(i)
