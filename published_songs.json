@@ -365,5 +365,14 @@
             "song_index": 7,
             "uploaded": true
         }
+    },
+    {
+        "song_name": "01 - When Your Shadow Meets Mine.mp3",
+        "metadata": {
+            "title": "01 - When Your Shadow Meets Mine",
+            "description": "New music release.",
+            "song_index": 1,
+            "uploaded": true
+        }
     }
 ]
