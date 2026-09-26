@@ -29,7 +29,9 @@ BG_MOTION = os.getenv("BG_MOTION", "static")
 ENABLE_PARTICLES = os.getenv("ENABLE_PARTICLES", "true").lower() == "true"
 ENABLE_AUDIO_WAVE = os.getenv("ENABLE_AUDIO_WAVE", "true").lower() == "true"
 ENABLE_VIGNETTE = os.getenv("ENABLE_VIGNETTE", "false").lower() == "true"
-CHANNEL_NAME = os.getenv("CHANNEL_NAME", "SPYNX MUSIC")
+CHANNEL_NAME = os.getenv("CHANNEL_NAME", "Sypionx")
+VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "viz").lower()
+VISUALIZER_COLOR = os.getenv("VISUALIZER_COLOR", "auto")
 
 
 def get_audio_duration(audio_path):
@@ -316,9 +318,27 @@ def process_single_song(image_path, audio_path, song_filename, display_name=None
     else:
         if os.path.exists(output_path):
             os.remove(output_path)
-        result = create_video_with_effects(image_path, audio_path, output_path, text_name)
-        if not result:
-            return None
+
+        if VISUALIZER_ENGINE == "viz":
+            viz_tpl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Visualizer_Core_Only.viz")
+            from visualizer_viz import generate_viz_video
+            print(f"[VideoProcessor] Rendering with 60 FPS Avee Player Visualizer Engine...")
+            generate_viz_video(
+                viz_path=viz_tpl,
+                bg_path=image_path,
+                audio_path=audio_path,
+                output_path=output_path,
+                fps=60,
+                base_diameter=490,
+                color=VISUALIZER_COLOR,
+                channel_name=CHANNEL_NAME,
+                song_title=text_name,
+            )
+            return output_path
+        else:
+            result = create_video_with_effects(image_path, audio_path, output_path, text_name)
+            if not result:
+                return None
 
     # ALWAYS Create/Update thumbnail with song title
     thumb_filename = f"{safe_name}_thumb.jpg"

@@ -77,12 +77,76 @@ def create_viral_centered_overlay(song_name, channel_name="sypionx", width=1920,
     return img
 
 
-def create_stretched_text_image(text, output_path, width=1920, height=1080, preset="modern_glass", channel_name="sypionx", **kwargs):
+import re
+
+def create_bottom_left_overlay(song_name, channel_name="sypionx", width=1920, height=1080):
     """
-    Main entry point for generating centered text overlay image.
+    Bottom-Left Typography:
+    1. Channel Branding: SYPIONX • OFFICIAL RELEASE (Radiant Gold, Outfit-Bold)
+    2. Song Title: Clean Song Name without track numbers (Crisp White, Montserrat-Bold)
+    3. Positioned at bottom-left corner with glowing shadow for 100% legibility on any background.
     """
-    print(f"[TextOverlay] Generating centered overlay for song: '{text}'")
-    img = create_viral_centered_overlay(text, channel_name, width, height)
+    img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+
+    # Strip leading track numbers like "05 - ", "01. ", "02_"
+    clean_title = re.sub(r'^\s*\d+[\s\.\-_]+', '', song_name).strip()
+    clean_title = clean_title.replace('_', ' ').replace(' - ', ' ').strip()
+    clean_title = ' '.join(w.capitalize() for w in clean_title.split())
+
+    scale = height / 1080.0
+    channel_size = max(18, int(22 * scale * 1.15))
+    title_size = max(24, int(42 * scale * 1.15))
+
+    title_font = get_font("Montserrat-Bold.ttf", title_size)
+    channel_font = get_font("Outfit-Bold.ttf", channel_size)
+
+    channel_text = f"{channel_name.upper()}   •   OFFICIAL RELEASE"
+    title_text = clean_title
+
+    pos_x = int(width * 0.055)
+    bottom_y = int(height * 0.92)
+
+    t_bbox = title_font.getbbox(title_text)
+    t_h = t_bbox[3] - t_bbox[1]
+
+    c_bbox = channel_font.getbbox(channel_text)
+    c_h = c_bbox[3] - c_bbox[1]
+
+    title_y = bottom_y - t_h
+    chan_y = title_y - c_h - int(12 * scale)
+
+    # 1. Subtle Gaussian Blur Shadow Layer
+    shadow = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(shadow)
+
+    for dx, dy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-3, -3), (3, 3), (0, 4)]:
+        s_draw.text((pos_x + dx, chan_y + dy), channel_text, font=channel_font, fill=(0, 0, 0, 220))
+        s_draw.text((pos_x + dx, title_y + dy), title_text, font=title_font, fill=(0, 0, 0, 240))
+
+    shadow = shadow.filter(ImageFilter.GaussianBlur(6))
+    img = Image.alpha_composite(img, shadow)
+
+    draw = ImageDraw.Draw(img)
+
+    # 2. Render Text
+    # Gold Channel Branding
+    draw.text((pos_x, chan_y), channel_text, font=channel_font, fill=(255, 215, 70, 245))
+    # Crisp White Song Title
+    draw.text((pos_x, title_y), title_text, font=title_font, fill=(255, 255, 255, 255))
+
+    return img
+
+
+def create_stretched_text_image(text, output_path, width=1920, height=1080, preset="bottom_left", channel_name="sypionx", **kwargs):
+    """
+    Main entry point for generating text overlay image.
+    Defaults to bottom-left layout to leave subject and visualizer unobstructed.
+    """
+    print(f"[TextOverlay] Generating bottom-left overlay for song: '{text}' (Channel: {channel_name})")
+    if preset == "centered":
+        img = create_viral_centered_overlay(text, channel_name, width, height)
+    else:
+        img = create_bottom_left_overlay(text, channel_name, width, height)
 
     img.save(output_path, 'PNG')
     print(f"[TextOverlay] Text overlay saved to {output_path}")

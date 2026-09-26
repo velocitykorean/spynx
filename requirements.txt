@@ -13,8 +13,11 @@ google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 google-api-python-client>=2.101.0
 
-# Audio tag reading
+# Audio & Visualizer Processing
 mutagen>=1.47.0
+soundfile>=0.12.0
+scipy>=1.10.0
+opencv-python>=4.8.0
 
 # Image processing
 Pillow>=10.0.0

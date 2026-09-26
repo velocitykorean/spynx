@@ -57,48 +57,106 @@ def parse_titles_descriptions(filepath="titles_descriptions.txt"):
     return songs
 
 
+def generate_viral_metadata(audio_filename, channel_name="Sypionx"):
+    """
+    Generates a viral, high-CTR YouTube title, poetic description, and tags
+    when a song does not have a manual entry in titles_descriptions.txt.
+    """
+    base = os.path.splitext(os.path.basename(audio_filename))[0].strip()
+    clean_title = re.sub(r'^\s*\d+[\s\.\-_]+', '', base).strip()
+    clean_title = clean_title.replace('_', ' ').replace(' - ', ' ').strip()
+    # Normalize title case
+    clean_title = ' '.join(w.capitalize() for w in clean_title.split())
+
+    viral_title = f"{clean_title} | {channel_name} [Official Audio Visualizer]"
+
+    viral_description = f"""✨ "{clean_title}" — {channel_name}
+
+Some feelings are hard to put into words, but you can feel them through the sound.
+A delicate blend of warm melodic emotion, atmospheric textures, and a heartbeat bassline.
+
+🎧 Best experienced with headphones at high volume.
+
+🎵 Track Information:
+• Track: {clean_title}
+• Artist / Project: {channel_name}
+• Visualizer: 60 FPS Audio-Reactive Core
+• Genre: Cinematic Emotional Pop / Chill Electronic
+
+⏱️ Chapters:
+0:00 - Introduction & Melodic Dawn
+0:42 - Heartbeat Bass Pulse
+1:35 - Emotional Peak
+2:40 - Peaceful Fading Horizon
+
+✨ Join {channel_name}:
+Subscribe and tap the notification bell (🔔) to explore nocturnal soundscapes, cinematic beats, and daily audio-reactive visualizers.
+
+#sypionx #music #visualizer #chill #electronic #cinematic #pop #newmusic #aesthetic #60fps"""
+
+    tags = [
+        channel_name.lower(),
+        clean_title.lower(),
+        f"{channel_name.lower()} visualizer",
+        "music visualizer",
+        "official audio",
+        "cinematic pop",
+        "chill beats",
+        "electronic music",
+        "60fps visualizer",
+        "aesthetic music",
+        "deep bass"
+    ]
+
+    return {
+        "song_name": clean_title,
+        "title": viral_title,
+        "description": viral_description,
+        "tags": tags,
+    }
+
+
 def match_audio_to_metadata(audio_filename, songs_dict):
     """
     Match an audio filename to a song in the metadata dict.
-    Tries exact match, then partial match on song name.
-    Returns (song_index, metadata) or None.
+    Tries exact match, then stripped number match, then partial match.
     """
-    # Clean audio filename: remove extension
     audio_name = os.path.splitext(audio_filename)[0].strip()
+    clean_audio_name = re.sub(r'^\s*\d+[\s\.\-_]+', '', audio_name).strip()
 
     for idx, data in songs_dict.items():
         song_name = data['song_name']
 
         # Exact match (case-insensitive)
-        if audio_name.lower() == song_name.lower():
+        if audio_name.lower() == song_name.lower() or clean_audio_name.lower() == song_name.lower():
             return idx, data
 
         # Audio name contains song name
-        if song_name.lower() in audio_name.lower():
+        if song_name.lower() in audio_name.lower() or song_name.lower() in clean_audio_name.lower():
             return idx, data
 
         # Song name contains audio name
-        if audio_name.lower() in song_name.lower():
+        if clean_audio_name.lower() in song_name.lower():
             return idx, data
 
     return None
 
 
-def get_song_metadata_by_name(audio_filename, filepath="titles_descriptions.txt"):
-    """Get title and description for a song based on audio filename."""
+def get_song_metadata_by_name(audio_filename, filepath="titles_descriptions.txt", channel_name="Sypionx"):
+    """Get title and description for a song based on audio filename, with viral fallback."""
     songs = parse_titles_descriptions(filepath)
     result = match_audio_to_metadata(audio_filename, songs)
 
     if result:
         idx, metadata = result
         print(f"Matched '{audio_filename}' -> Song {idx}: {metadata['title']}")
+        # Ensure song_name is clean
+        if 'song_name' not in metadata or not metadata['song_name']:
+            metadata['song_name'] = re.sub(r'^\s*\d+[\s\.\-_]+', '', metadata['title'].split('|')[0]).strip()
         return metadata
     else:
-        print(f"Warning: No metadata match for '{audio_filename}'")
-        return {
-            "title": os.path.splitext(audio_filename)[0],
-            "description": "New music release."
-        }
+        print(f"Notice: No manual entry found for '{audio_filename}'. Generating viral metadata package...")
+        return generate_viral_metadata(audio_filename, channel_name=channel_name)
 
 
 if __name__ == "__main__":
