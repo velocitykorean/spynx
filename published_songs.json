@@ -374,5 +374,14 @@
             "song_index": 1,
             "uploaded": true
         }
+    },
+    {
+        "song_name": "02 - Somewhere Between Your Heartbeat.mp3",
+        "metadata": {
+            "title": "02 - Somewhere Between Your Heartbeat",
+            "description": "New music release.",
+            "song_index": 2,
+            "uploaded": true
+        }
     }
 ]
