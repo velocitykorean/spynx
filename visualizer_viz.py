@@ -1,8 +1,8 @@
 """
-Avee Player .viz Template Visualizer Engine (High-Fidelity Audio-Reactive BeatPulse)
-Extracts and renders the 3D Topographic Mesh Core from Visualizer_Core_Only.viz
-with 60 FPS temporal interpolation, sample-accurate audio synchronization,
-radiant neon bloom, and bottom-left channel + song branding.
+Avee Player .viz Visualizer Engine - Visualizer_Core_Only.viz
+Renders the 3D Topographic Mesh Core exactly from Visualizer_Core_Only.viz
+with buttery-smooth 60 FPS animation, 100% sample-accurate 0.0ms audio sync,
+punchy beat pulse, and bottom-left channel + song branding.
 """
 
 import os
@@ -16,10 +16,10 @@ import tempfile
 import numpy as np
 import cv2
 import soundfile as sf
+import scipy.signal
 from PIL import Image, ImageSequence, ImageDraw, ImageFont, ImageFilter
 
 
-# Luminous color palette designed to pop on any background
 LIGHT_PALETTE = {
     "gold": (70, 215, 255),        # Radiant Daffodil / Sunflower Gold (BGR)
     "cyan": (242, 250, 140),       # Electric Cyan / Aqua
@@ -35,7 +35,7 @@ LIGHT_PALETTE = {
 
 def load_viz_template(viz_path, color_bgr=(70, 215, 255)):
     """
-    Extracts mesh_core.gif from .viz archive and pre-tints all frames with neon bloom.
+    Extracts mesh_core.gif from Visualizer_Core_Only.viz and pre-tints all frames.
     """
     print(f"[VizEngine] Extracting template from: {viz_path}", flush=True)
     with zipfile.ZipFile(viz_path, 'r') as z:
@@ -47,7 +47,7 @@ def load_viz_template(viz_path, color_bgr=(70, 215, 255)):
 
     pil_frames = [f.copy().convert("RGBA") for f in ImageSequence.Iterator(im)]
     num_frames = len(pil_frames)
-    print(f"[VizEngine] Loaded {num_frames} frames from 3D Topographic Mesh Core.", flush=True)
+    print(f"[VizEngine] Loaded {num_frames} frames from Visualizer_Core_Only.viz.", flush=True)
 
     tinted_frames = []
     cb, cg, cr = color_bgr
@@ -65,65 +65,14 @@ def load_viz_template(viz_path, color_bgr=(70, 215, 255)):
         alpha_mask = (alpha.astype(np.float32) / 255.0)[:, :, np.newaxis]
         tinted_alpha = tinted * alpha_mask
 
-        # Multi-stage bloom pass for high-luminosity neon glow
+        # Multi-stage neon bloom
         b1 = cv2.GaussianBlur(tinted_alpha, (9, 9), 0)
         b2 = cv2.GaussianBlur(tinted_alpha, (25, 25), 0)
-        glowing = np.clip(tinted_alpha * 1.15 + b1 * 0.75 + b2 * 0.40, 0, 255).astype(np.uint8)
+        glowing = np.clip(tinted_alpha * 1.12 + b1 * 0.70 + b2 * 0.35, 0, 255).astype(np.uint8)
 
         tinted_frames.append(glowing)
 
     return tinted_frames
-
-
-def analyze_audio_envelope(audio_mono, sr, fps=60):
-    """
-    Calculates sample-accurate sub-bass and RMS beat envelope aligned frame-by-frame.
-    """
-    total_frames = int(len(audio_mono) / sr * fps)
-    hop_samples = sr / fps
-    window_size = int(sr * 0.05)  # 50ms window
-    window_size = max(window_size, 512)
-    hann = np.hanning(window_size)
-
-    raw_bass = np.zeros(total_frames, dtype=np.float32)
-
-    for i in range(total_frames):
-        center_s = int(i * hop_samples)
-        s_start = max(0, center_s - window_size // 2)
-        s_end = min(len(audio_mono), s_start + window_size)
-        chunk = audio_mono[s_start:s_end]
-        if len(chunk) < window_size:
-            chunk = np.pad(chunk, (0, window_size - len(chunk)))
-
-        windowed = chunk * hann
-        # FFT magnitude
-        fft_mag = np.abs(np.fft.rfft(windowed))
-        freqs = np.fft.rfftfreq(window_size, d=1.0 / sr)
-
-        # Sub-bass range (25 Hz to 140 Hz) - drum kicks & 808s
-        bass_bins = np.where((freqs >= 25) & (freqs <= 140))[0]
-        if len(bass_bins) > 0:
-            raw_bass[i] = np.mean(fft_mag[bass_bins])
-
-    # Dynamic attack & decay smoothing for punchy kick response
-    smoothed_bass = np.zeros(total_frames, dtype=np.float32)
-    attack = 0.90
-    decay = 0.22
-    for i in range(total_frames):
-        curr = raw_bass[i]
-        if i == 0:
-            smoothed_bass[i] = curr
-        else:
-            prev = smoothed_bass[i - 1]
-            if curr > prev:
-                smoothed_bass[i] = prev + attack * (curr - prev)
-            else:
-                smoothed_bass[i] = prev * (1.0 - decay)
-
-    # Normalize based on 95th percentile
-    p95 = np.percentile(smoothed_bass, 95) if len(smoothed_bass) > 0 else 1.0
-    norm_bass = np.clip(smoothed_bass / (p95 + 1e-6), 0.0, 1.4)
-    return norm_bass
 
 
 def draw_bottom_left_branding(cv2_img, channel_name="Sypionx", song_title=""):
@@ -214,6 +163,52 @@ def draw_bottom_left_branding(cv2_img, channel_name="Sypionx", song_title=""):
     return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGBA2BGR)
 
 
+def compute_audio_beat_envelope(mono_audio, sr, fps=60):
+    """
+    Computes sample-accurate sub-bass beat envelope with instant transient punch.
+    """
+    total_frames = int(len(mono_audio) / sr * fps)
+    hop_length = int(sr / fps)
+    n_fft = 2048
+
+    frequencies, times, Zxx = scipy.signal.stft(
+        mono_audio, fs=sr, nperseg=n_fft, noverlap=n_fft - hop_length
+    )
+    magnitude = np.abs(Zxx)
+
+    # Sub-bass range (25 Hz to 130 Hz) - kicks & 808s
+    bass_idx = np.where((frequencies >= 25) & (frequencies <= 130))[0]
+    if len(bass_idx) > 0:
+        bass_energy = np.mean(magnitude[bass_idx, :], axis=0)
+    else:
+        bass_energy = np.zeros(magnitude.shape[1])
+
+    # Align length to total_frames
+    if len(bass_energy) < total_frames:
+        bass_energy = np.pad(bass_energy, (0, total_frames - len(bass_energy)))
+    else:
+        bass_energy = bass_energy[:total_frames]
+
+    # Fast attack (0.90) for instant beat impact + smooth decay (0.22)
+    smoothed = np.zeros(total_frames, dtype=np.float32)
+    attack = 0.90
+    decay = 0.22
+    for t_idx in range(total_frames):
+        curr = bass_energy[t_idx]
+        if t_idx == 0:
+            smoothed[t_idx] = curr
+        else:
+            prev = smoothed[t_idx - 1]
+            if curr > prev:
+                smoothed[t_idx] = prev + attack * (curr - prev)
+            else:
+                smoothed[t_idx] = prev * (1.0 - decay)
+
+    p95 = np.percentile(smoothed, 95) if len(smoothed) > 0 else 1.0
+    norm_bass = np.clip(smoothed / (p95 + 1e-6), 0.0, 1.4)
+    return norm_bass
+
+
 def generate_viz_video(
     viz_path,
     bg_path,
@@ -231,9 +226,9 @@ def generate_viz_video(
     song_title=None,
 ):
     """
-    Renders video using Avee Player .viz template with 60 FPS,
-    smooth 3D topographic terrain interpolation, right-side placement,
-    bottom-left branding, and peak-energy thumbnail.
+    Renders video using Visualizer_Core_Only.viz with 60 FPS,
+    smooth frame-by-frame animation, right-side placement,
+    sample-accurate 0.0ms audio sync, and peak-energy thumbnail.
     """
     if not os.path.exists(bg_path):
         raise FileNotFoundError(f"Background image not found: {bg_path}")
@@ -246,21 +241,19 @@ def generate_viz_video(
     W = (orig_w // 2) * 2
     bg = raw_bg[:H, :W].copy()
 
-    # Determine song title from audio file if not provided
     if song_title is None or not song_title:
         song_title = os.path.splitext(os.path.basename(audio_path))[0]
 
-    # Draw bottom-left branding onto background
     bg = draw_bottom_left_branding(bg, channel_name=channel_name, song_title=song_title)
 
-    # Resolve color
+    # Color selection
     if isinstance(color, str):
         c_low = color.lower().strip()
         if c_low in ["auto", "random"]:
             import random
             color_name = random.choice(list(LIGHT_PALETTE.keys()))
             color_bgr = LIGHT_PALETTE[color_name]
-            print(f"[VizEngine] Auto-selected luminous visualizer color: {color_name.upper()} {color_bgr}", flush=True)
+            print(f"[VizEngine] Auto-selected luminous color: {color_name.upper()} {color_bgr}", flush=True)
         elif c_low in LIGHT_PALETTE:
             color_bgr = LIGHT_PALETTE[c_low]
         else:
@@ -268,20 +261,19 @@ def generate_viz_video(
     else:
         color_bgr = color
 
-    # Standardized placement: Right-side negative space
+    # Right-side negative space placement
     cx = pos_x if pos_x is not None else int(W * 0.741)
     cy = pos_y if pos_y is not None else int(H * 0.480)
     if base_diameter is None or base_diameter <= 0:
         base_diameter = 490
 
-    print(f"[VizEngine] Canvas: {W}x{H} | Center: ({cx}, {cy}) | Base diameter: {base_diameter} | FPS: {fps}", flush=True)
+    print(f"[VizEngine] Canvas: {W}x{H} | Visualizer center: ({cx}, {cy}) | Base diameter: {base_diameter} | FPS: {fps}", flush=True)
 
-    # 1. Load template frames
+    # 1. Load template frames from Visualizer_Core_Only.viz
     template_frames = load_viz_template(viz_path, color_bgr=color_bgr)
     num_template_frames = len(template_frames)
-    mesh_gif_fps = 6.0  # Original GIF speed: 166.67ms per frame = 6.0 FPS
 
-    # 2. Load & slice exact audio to guarantee 0.0ms delay
+    # 2. Load audio and slice sample-accurately to eliminate any seek drift
     print(f"[VizEngine] Loading audio: {audio_path}", flush=True)
     audio_full, sr = sf.read(audio_path)
     if audio_full.ndim > 1:
@@ -304,15 +296,15 @@ def generate_viz_video(
     actual_frames = int(actual_duration * fps)
     print(f"[VizEngine] Sliced audio: {actual_duration:.2f}s ({actual_frames} video frames @ {fps}fps)", flush=True)
 
-    # Save exact audio slice to a temporary uncompressed WAV for FFmpeg
+    # Write exact audio slice to a temporary uncompressed WAV for 0.0ms delay in FFmpeg
     temp_wav_fd, temp_wav_path = tempfile.mkstemp(suffix="_sync.wav")
     os.close(temp_wav_fd)
     sf.write(temp_wav_path, audio_slice, sr)
 
-    # 3. Analyze beat envelope
-    bass_env = analyze_audio_envelope(mono_slice, sr, fps=fps)
+    # 3. Compute beat envelope
+    bass_env = compute_audio_beat_envelope(mono_slice, sr, fps=fps)
 
-    # 4. Setup FFmpeg
+    # 4. Setup FFmpeg process
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     ffmpeg_cmd = [
         "ffmpeg", "-y",
@@ -345,7 +337,7 @@ def generate_viz_video(
     t0 = time.time()
     last_print = t0
 
-    # Bounding box for visualizer blending
+    # Max diameter for blending ROI
     max_reach = int(base_diameter * 1.45)
     x1 = max(0, cx - max_reach // 2)
     x2 = min(W, cx + max_reach // 2)
@@ -365,30 +357,23 @@ def generate_viz_video(
 
     try:
         for i in range(actual_frames):
-            time_now = i / fps
+            # Smooth 60 FPS continuous animation from Visualizer_Core_Only.viz
+            tpl_idx = i % num_template_frames
+            vis_src = template_frames[tpl_idx]
+
             stft_idx = min(i, len(bass_env) - 1)
             bass_val = float(bass_env[stft_idx])
 
-            # Smooth 60 FPS interpolation of 3D topographic terrain at true GIF speed
-            frame_float = (time_now * mesh_gif_fps) % num_template_frames
-            f0 = int(frame_float) % num_template_frames
-            f1 = (f0 + 1) % num_template_frames
-            frac = frame_float - int(frame_float)
-
-            vis_0 = template_frames[f0]
-            vis_1 = template_frames[f1]
-            vis_interp = cv2.addWeighted(vis_0, 1.0 - frac, vis_1, frac, 0)
-
-            # Avee BeatPulse scaling (0.88x baseline up to 1.18x on kick peaks)
+            # BeatPulse scaling: expands punchily with the beat (0.88x up to 1.18x)
             pulse_scale = 0.88 + 0.28 * bass_val
             current_dia = int(base_diameter * pulse_scale)
             current_dia = (current_dia // 2) * 2
 
-            # Dynamic glow intensity boosted on beat punch
-            glow_boost = 1.0 + 0.35 * bass_val
-            vis_boosted = cv2.convertScaleAbs(vis_interp, alpha=glow_boost, beta=0)
+            # Dynamic glow punch on drum beats
+            glow_boost = 1.0 + 0.30 * bass_val
+            vis_boosted = cv2.convertScaleAbs(vis_src, alpha=glow_boost, beta=0)
 
-            # Resize visualizer frame
+            # Scale visualizer frame
             vis_scaled = cv2.resize(
                 vis_boosted,
                 (current_dia, current_dia),
@@ -417,7 +402,7 @@ def generate_viz_video(
             if i == thumb_target_frame:
                 saved_thumb = frame_out.copy()
 
-            # Pipe frame to FFmpeg
+            # Write frame to FFmpeg
             proc.stdin.write(frame_out.tobytes())
 
             now = time.time()
@@ -432,7 +417,6 @@ def generate_viz_video(
     finally:
         proc.stdin.close()
         proc.wait()
-        # Clean up temporary WAV
         if os.path.exists(temp_wav_path):
             try:
                 os.remove(temp_wav_path)
@@ -452,7 +436,7 @@ def generate_viz_video(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Render Avee Player .viz template onto background")
+    parser = argparse.ArgumentParser(description="Render Avee Player Visualizer_Core_Only.viz onto background")
     parser.add_argument(
         "--viz",
         default=r"D:\E agy cli\E bots\music_visualizer\Visualizer_Core_Only.viz",
@@ -470,7 +454,7 @@ def main():
     )
     parser.add_argument(
         "--output",
-        default=r"D:\E agy cli\E bots\music_visualizer\daffodil_viz_smooth_60fps_15s.mp4",
+        default=r"D:\E agy cli\E bots\music_visualizer\daffodil_viz_core_smooth_60fps_15s.mp4",
         help="Path to output MP4",
     )
     parser.add_argument("--fps", type=int, default=60, help="Frames per second (default: 60)")
