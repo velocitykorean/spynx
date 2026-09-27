@@ -282,15 +282,18 @@ def generate_core_only_video(
     duration=None,
     pos_x=None,
     pos_y=None,
-    base_diameter=490,
-    color="gold",
+    base_diameter=None,
+    color="auto",
     crf=16,
     channel_name="Sypionx",
     song_title=None,
+    target_width=1920,
+    target_height=1080,
 ):
     """
     Renders video using ONLY the 3D Topographic Mesh Core from Visualizer_Core_Only.viz.
     Zero outside rings. Fully audio-synced BeatPulse & groove-reactive rotation.
+    Enforces standard Full HD 1080P (1920x1080) output resolution.
     """
     if not os.path.exists(bg_path):
         raise FileNotFoundError(f"Background image not found: {bg_path}")
@@ -298,10 +301,22 @@ def generate_core_only_video(
     if raw_bg is None:
         raise ValueError(f"Could not load image: {bg_path}")
 
+    # Standard Full HD 1080P canvas (1920x1080)
+    W = target_width
+    H = target_height
     orig_h, orig_w = raw_bg.shape[:2]
-    H = (orig_h // 2) * 2
-    W = (orig_w // 2) * 2
-    bg = raw_bg[:H, :W].copy()
+
+    if orig_w != W or orig_h != H:
+        scale_factor = max(W / orig_w, H / orig_h)
+        new_w = int(round(orig_w * scale_factor))
+        new_h = int(round(orig_h * scale_factor))
+        interp = cv2.INTER_LANCZOS4 if scale_factor > 1.0 else cv2.INTER_AREA
+        resized = cv2.resize(raw_bg, (new_w, new_h), interpolation=interp)
+        crop_x = max(0, (new_w - W) // 2)
+        crop_y = max(0, (new_h - H) // 2)
+        bg = resized[crop_y:crop_y + H, crop_x:crop_x + W].copy()
+    else:
+        bg = raw_bg.copy()
 
     if song_title is None or not song_title:
         song_title = os.path.splitext(os.path.basename(audio_path))[0]
@@ -329,9 +344,9 @@ def generate_core_only_video(
     cx = pos_x if pos_x is not None else int(W * 0.741)
     cy = pos_y if pos_y is not None else int(H * 0.480)
     if base_diameter is None or base_diameter <= 0:
-        base_diameter = 490
+        base_diameter = int(round(490 * (H / 768.0)))  # Proportional scale (688px at 1080p)
 
-    print(f"[CoreOnly] Canvas: {W}x{H} | Center: ({cx}, {cy}) | Base diameter: {base_diameter}px | FPS: {fps}", flush=True)
+    print(f"[CoreOnly] Canvas: {W}x{H} (1080P Full HD) | Center: ({cx}, {cy}) | Base diameter: {base_diameter}px | FPS: {fps}", flush=True)
 
     # 1. Load ONLY the core frames
     template_frames = load_viz_core(viz_path, color_bgr=color_bgr)
@@ -537,7 +552,9 @@ def main():
     parser.add_argument("--color", default="auto", help="Tint color: auto (extracts splash color from image), random, gold, cyan, yellow, mint, pink, lavender, white, peach, ice_blue")
     parser.add_argument("--pos-x", type=int, default=None, help="Center X (default: right-side ~74%% of width)")
     parser.add_argument("--pos-y", type=int, default=None, help="Center Y (default: ~48%% of height)")
-    parser.add_argument("--diameter", type=int, default=490, help="Base diameter in pixels (default: 490)")
+    parser.add_argument("--diameter", type=int, default=None, help="Base diameter in pixels (default: auto proportional ~688px for 1080p)")
+    parser.add_argument("--width", type=int, default=1920, help="Target canvas width (default: 1920)")
+    parser.add_argument("--height", type=int, default=1080, help="Target canvas height (default: 1080)")
     parser.add_argument("--channel", default="Sypionx", help="Channel name branding (default: Sypionx)")
     parser.add_argument("--title", default="", help="Song title (default: auto from audio filename)")
 
@@ -557,6 +574,8 @@ def main():
         color=args.color,
         channel_name=args.channel,
         song_title=args.title,
+        target_width=args.width,
+        target_height=args.height,
     )
 
 
