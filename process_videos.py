@@ -30,7 +30,7 @@ ENABLE_PARTICLES = os.getenv("ENABLE_PARTICLES", "true").lower() == "true"
 ENABLE_AUDIO_WAVE = os.getenv("ENABLE_AUDIO_WAVE", "true").lower() == "true"
 ENABLE_VIGNETTE = os.getenv("ENABLE_VIGNETTE", "false").lower() == "true"
 CHANNEL_NAME = os.getenv("CHANNEL_NAME", "Sypionx")
-VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "viz").lower()
+VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "synced_viz").lower()
 VISUALIZER_COLOR = os.getenv("VISUALIZER_COLOR", "auto")
 VISUALIZER_STYLE = os.getenv("VISUALIZER_STYLE", "bars").lower()
 VISUALIZER_DIAMETER = int(os.getenv("VISUALIZER_DIAMETER", "490"))
@@ -321,7 +321,32 @@ def process_single_song(image_path, audio_path, song_filename, display_name=None
         if os.path.exists(output_path):
             os.remove(output_path)
 
-        if VISUALIZER_ENGINE in ["viz", "avee", "default"]:
+        if VISUALIZER_ENGINE in ["synced_viz", "ncs_viz", "hybrid", "default", "viz"]:
+            from visualizer_hybrid_ncs import generate_ncs_viz_video
+            viz_candidates = [
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "NoCopyrightSoundsVisualizerV4.viz"),
+                "NoCopyrightSoundsVisualizerV4.viz",
+                r"C:\Users\kreg9\Downloads\NoCopyrightSoundsVisualizerV4(By C-ops Nation).viz",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "Visualizer_Core_Only.viz"),
+                "Visualizer_Core_Only.viz",
+                r"D:\E agy cli\E bots\music_visualizer\Visualizer_Core_Only.viz",
+                r"C:\Users\kreg9\Downloads\Visualizer_Core_Only.viz",
+            ]
+            viz_path = next((p for p in viz_candidates if os.path.exists(p)), "Visualizer_Core_Only.viz")
+            print(f"[VideoProcessor] Rendering with Full Audio-Synced NCS .viz Engine: {viz_path} (60 FPS, BeatPulse, Diameter: {VISUALIZER_DIAMETER}px)...")
+            generate_ncs_viz_video(
+                viz_path=viz_path,
+                bg_path=image_path,
+                audio_path=audio_path,
+                output_path=output_path,
+                fps=60,
+                base_diameter=VISUALIZER_DIAMETER,
+                color=VISUALIZER_COLOR,
+                channel_name=CHANNEL_NAME,
+                song_title=text_name,
+            )
+            return output_path
+        elif VISUALIZER_ENGINE in ["core_only", "viz_core"]:
             from visualizer_viz import generate_viz_video
             viz_candidates = [
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "Visualizer_Core_Only.viz"),
@@ -330,7 +355,7 @@ def process_single_song(image_path, audio_path, song_filename, display_name=None
                 r"C:\Users\kreg9\Downloads\Visualizer_Core_Only.viz",
             ]
             viz_path = next((p for p in viz_candidates if os.path.exists(p)), "Visualizer_Core_Only.viz")
-            print(f"[VideoProcessor] Rendering with Avee Player .viz Engine: {viz_path} (60 FPS, BeatPulse, Diameter: {VISUALIZER_DIAMETER}px)...")
+            print(f"[VideoProcessor] Rendering with Avee Player Core-Only .viz Engine: {viz_path} (60 FPS, BeatPulse, Diameter: {VISUALIZER_DIAMETER}px)...")
             generate_viz_video(
                 viz_path=viz_path,
                 bg_path=image_path,
