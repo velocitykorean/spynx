@@ -30,8 +30,9 @@ ENABLE_PARTICLES = os.getenv("ENABLE_PARTICLES", "true").lower() == "true"
 ENABLE_AUDIO_WAVE = os.getenv("ENABLE_AUDIO_WAVE", "true").lower() == "true"
 ENABLE_VIGNETTE = os.getenv("ENABLE_VIGNETTE", "false").lower() == "true"
 CHANNEL_NAME = os.getenv("CHANNEL_NAME", "Sypionx")
-VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "viz").lower()
+VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "ncs").lower()
 VISUALIZER_COLOR = os.getenv("VISUALIZER_COLOR", "auto")
+VISUALIZER_STYLE = os.getenv("VISUALIZER_STYLE", "bars").lower()
 
 
 def get_audio_duration(audio_path):
@@ -319,20 +320,20 @@ def process_single_song(image_path, audio_path, song_filename, display_name=None
         if os.path.exists(output_path):
             os.remove(output_path)
 
-        if VISUALIZER_ENGINE == "viz":
-            viz_tpl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Visualizer_Core_Only.viz")
-            from visualizer_viz import generate_viz_video
-            print(f"[VideoProcessor] Rendering with 60 FPS Avee Player Visualizer Engine...")
-            generate_viz_video(
-                viz_path=viz_tpl,
-                bg_path=image_path,
+        if VISUALIZER_ENGINE in ["ncs", "reactive", "bars", "wave", "default", "viz"]:
+            style = "wave" if VISUALIZER_ENGINE == "wave" else VISUALIZER_STYLE
+            from visualizer_ncs import generate_ncs_video
+            print(f"[VideoProcessor] Rendering with 100% Real-Time FFT Reactive Engine (60 FPS, Style: {style})...")
+            generate_ncs_video(
                 audio_path=audio_path,
+                bg_path=image_path,
                 output_path=output_path,
                 fps=60,
-                base_diameter=490,
+                radius=245,
                 color=VISUALIZER_COLOR,
+                style=style,
                 channel_name=CHANNEL_NAME,
-                song_title=text_name,
+                title=text_name,
             )
             return output_path
         else:
