@@ -202,48 +202,39 @@ def compute_audio_rhythm(mono_audio, sr, fps=60):
         bass_energy = bass_energy[:total_frames]
         total_energy = total_energy[:total_frames]
 
-    # Beat pulse smoothing (Instant Attack 0.95, Fast Decay 0.25)
+    # Authentic Avee Player Beat smoothing:
+    # Fast attack (0.80), musical exponential decay (0.09 per frame ~120ms kick thump duration)
     smoothed_bass = np.zeros(total_frames, dtype=np.float32)
     smoothed_energy = np.zeros(total_frames, dtype=np.float32)
-    shake_env = np.zeros(total_frames, dtype=np.float32)
 
-    # Detect kick onsets (sharp positive difference in bass energy)
-    bass_diff = np.diff(bass_energy, prepend=bass_energy[0])
-    raw_onsets = np.maximum(0, bass_diff)
-    p95_onset = np.percentile(raw_onsets, 95) if len(raw_onsets) > 0 else 1.0
-    norm_onsets = np.clip(raw_onsets / (p95_onset + 1e-6), 0.0, 2.0)
+    attack_rate = 0.80
+    decay_rate = 0.09
 
     for i in range(total_frames):
         b_curr = bass_energy[i]
         e_curr = total_energy[i]
-        onset = norm_onsets[i]
 
         if i == 0:
             smoothed_bass[i] = b_curr
             smoothed_energy[i] = e_curr
-            shake_env[i] = onset
         else:
             b_prev = smoothed_bass[i - 1]
-            smoothed_bass[i] = b_prev + 0.95 * (b_curr - b_prev) if b_curr > b_prev else b_prev * (1.0 - 0.25)
+            if b_curr > b_prev:
+                smoothed_bass[i] = b_prev + attack_rate * (b_curr - b_prev)
+            else:
+                smoothed_bass[i] = b_prev * (1.0 - decay_rate)
 
             e_prev = smoothed_energy[i - 1]
-            smoothed_energy[i] = e_prev + 0.30 * (e_curr - e_prev)
-
-            # BeatCamShake: triggers on kick onset, decays over ~5 frames (80ms thump)
-            shake_prev = shake_env[i - 1]
-            if onset > 0.4:
-                shake_env[i] = max(shake_prev * 0.70, onset)
-            else:
-                shake_env[i] = shake_prev * 0.65
+            smoothed_energy[i] = e_prev + 0.10 * (e_curr - e_prev)
 
     p95_b = np.percentile(smoothed_bass, 95) if len(smoothed_bass) > 0 else 1.0
     p95_e = np.percentile(smoothed_energy, 95) if len(smoothed_energy) > 0 else 1.0
 
-    norm_bass = np.clip(smoothed_bass / (p95_b + 1e-6), 0.0, 1.5)
-    norm_energy = np.clip(smoothed_energy / (p95_e + 1e-6), 0.1, 1.4)
-    norm_shake = np.clip(shake_env, 0.0, 1.5)
+    # Normalized clean beat envelope [0.0, 1.0]
+    norm_bass = np.clip(smoothed_bass / (p95_b + 1e-6), 0.0, 1.0)
+    norm_energy = np.clip(smoothed_energy / (p95_e + 1e-6), 0.0, 1.0)
 
-    return norm_bass, norm_energy, norm_shake, norm_onsets
+    return norm_bass, norm_energy
 
 
 def generate_core_only_video(
@@ -337,8 +328,8 @@ def generate_core_only_video(
     os.close(temp_wav_fd)
     sf.write(temp_wav_path, audio_slice, sr)
 
-    # 3. Analyze kick transients (BeatPulse), track energy & BeatCamShake
-    bass_env, energy_env, shake_env, onsets_env = compute_audio_rhythm(mono_slice, sr, fps=fps)
+    # 3. Analyze kick transients (BeatPulse) & track energy
+    bass_env, energy_env = compute_audio_rhythm(mono_slice, sr, fps=fps)
 
     # 4. Setup FFmpeg
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -398,29 +389,25 @@ def generate_core_only_video(
         for i in range(actual_frames):
             bass_val = float(bass_env[i])
             energy_val = float(energy_env[i])
-            shake_val = float(shake_env[i])
-            onset_val = float(onsets_env[i])
 
-            # Rhythmic frame advancement: speeds up when track has heavy energy, slows on calm
-            step_speed = 0.55 + 0.75 * energy_val
-            phase_accum += step_speed
+            # Authentic Avee Player rotation: constant steady progression with TotalTime
+            phase_accum += 0.85
             tpl_idx = int(phase_accum) % num_template_frames
 
             core_src = template_frames[tpl_idx]
 
-            # High-impact BeatPulse scaling: snaps outward instantly on drum kick
-            pulse_scale = 0.85 + 0.35 * bass_val + 0.15 * onset_val
+            # Authentic Avee Player BeatPulse:
+            # Base scale 1.0 (490px), max beat expansion +18% on punchy kick thumps
+            pulse_scale = 1.0 + 0.18 * bass_val
             current_dia = int(base_diameter * pulse_scale)
             current_dia = (current_dia // 2) * 2
 
-            # Dynamic BeatCamShake: rapid subwoofer vibration on drum hits (Avee Player spec)
-            shake_dx = int(round(np.sin(i * 3.7) * 7.5 * shake_val))
-            shake_dy = int(round(np.cos(i * 4.3) * 6.0 * shake_val))
-            scx = rcx + shake_dx
-            scy = rcy + shake_dy
+            # Rock-solid anchor (Avee MeasurePos: Nothing) -> Zero erratic camera twitch
+            scx = rcx
+            scy = rcy
 
-            # Dynamic glow punch on drum beats
-            glow_boost = 1.0 + 0.45 * bass_val + 0.20 * onset_val
+            # Luminous dynamic beat glow
+            glow_boost = 1.0 + 0.20 * bass_val
             core_boosted = cv2.convertScaleAbs(core_src, alpha=glow_boost, beta=0)
 
             # Scale visualizer frame
