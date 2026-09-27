@@ -86,7 +86,41 @@ def load_viz_core(viz_path, color_bgr=(70, 215, 255)):
     return tinted_frames
 
 
-def draw_bottom_left_branding(cv2_img, channel_name="Sypionx", song_title=""):
+def extract_splash_accent_color(img_bgr, default_bgr=(70, 215, 255)):
+    """
+    Extracts the single vibrant splash color from a black-and-white / selective-color image.
+    Filters out desaturated pixels (grayscale, blacks, whites) and isolates the colorful subject.
+    Converts to high-luminance neon BGR for the visualizer.
+    """
+    if img_bgr is None:
+        return default_bgr
+
+    # Downscale for instant processing
+    h, w = img_bgr.shape[:2]
+    small = cv2.resize(img_bgr, (min(w, 400), min(h, 400)), interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+
+    # Filter for saturated pixels (S > 50, V > 40)
+    sat_mask = (hsv[:, :, 1] > 50) & (hsv[:, :, 2] > 40)
+
+    if np.sum(sat_mask) < 20:
+        print("[ColorDetector] No distinct splash color detected in image. Using radiant gold.", flush=True)
+        return default_bgr
+
+    sat_hsv = hsv[sat_mask]
+    med_h = np.median(sat_hsv[:, 0])
+
+    # Boost saturation and brightness for luminous visualizer glow
+    neon_hsv = np.uint8([[[int(round(med_h)), 235, 255]]])
+    neon_bgr = cv2.cvtColor(neon_hsv, cv2.COLOR_HSV2BGR)[0][0]
+    result_bgr = (int(neon_bgr[0]), int(neon_bgr[1]), int(neon_bgr[2]))
+
+    hex_code = f"#{result_bgr[2]:02X}{result_bgr[1]:02X}{result_bgr[0]:02X}"
+    print(f"[ColorDetector] Auto-detected splash color from artwork: Hue={med_h:.1f} -> Neon BGR={result_bgr} (Hex: {hex_code})", flush=True)
+    return result_bgr
+
+
+def draw_bottom_left_branding(cv2_img, channel_name="Sypionx", song_title="", accent_bgr=None):
     """
     Renders channel branding and clean song title on bottom-left.
     Automatically strips track numbers from title.
@@ -165,7 +199,8 @@ def draw_bottom_left_branding(cv2_img, channel_name="Sypionx", song_title=""):
 
     draw = ImageDraw.Draw(overlay)
     if channel_text:
-        draw.text((pos_x, chan_y), channel_text, font=chan_font, fill=(255, 215, 70, 245))  # Radiant Gold
+        chan_fill = (accent_bgr[2], accent_bgr[1], accent_bgr[0], 245) if accent_bgr is not None else (255, 215, 70, 245)
+        draw.text((pos_x, chan_y), channel_text, font=chan_font, fill=chan_fill)
     if clean_title:
         draw.text((pos_x, title_y), clean_title, font=title_font, fill=(255, 255, 255, 255))      # Crisp White
 
@@ -271,22 +306,24 @@ def generate_core_only_video(
     if song_title is None or not song_title:
         song_title = os.path.splitext(os.path.basename(audio_path))[0]
 
-    bg = draw_bottom_left_branding(bg, channel_name=channel_name, song_title=song_title)
-
-    # Color selection
+    # Color selection: auto extracts the one splash color from the black-and-white image!
     if isinstance(color, str):
         c_low = color.lower().strip()
-        if c_low in ["auto", "random"]:
+        if c_low == "auto":
+            color_bgr = extract_splash_accent_color(raw_bg)
+        elif c_low == "random":
             import random
             color_name = random.choice(list(LIGHT_PALETTE.keys()))
             color_bgr = LIGHT_PALETTE[color_name]
-            print(f"[CoreOnly] Auto-selected luminous color: {color_name.upper()} {color_bgr}", flush=True)
+            print(f"[CoreOnly] Randomly selected color: {color_name.upper()} {color_bgr}", flush=True)
         elif c_low in LIGHT_PALETTE:
             color_bgr = LIGHT_PALETTE[c_low]
         else:
             color_bgr = LIGHT_PALETTE["gold"]
     else:
         color_bgr = color
+
+    bg = draw_bottom_left_branding(bg, channel_name=channel_name, song_title=song_title, accent_bgr=color_bgr)
 
     # Standard right-side placement
     cx = pos_x if pos_x is not None else int(W * 0.741)
@@ -497,7 +534,7 @@ def main():
     parser.add_argument("--fps", type=int, default=60, help="Frames per second (default: 60)")
     parser.add_argument("--start-sec", type=float, default=4.0, help="Start time in seconds")
     parser.add_argument("--duration", type=float, default=15.0, help="Duration in seconds (default: 15s)")
-    parser.add_argument("--color", default="gold", help="Tint color: auto/random, gold, cyan, yellow, mint, pink, lavender, white, peach, ice_blue")
+    parser.add_argument("--color", default="auto", help="Tint color: auto (extracts splash color from image), random, gold, cyan, yellow, mint, pink, lavender, white, peach, ice_blue")
     parser.add_argument("--pos-x", type=int, default=None, help="Center X (default: right-side ~74%% of width)")
     parser.add_argument("--pos-y", type=int, default=None, help="Center Y (default: ~48%% of height)")
     parser.add_argument("--diameter", type=int, default=490, help="Base diameter in pixels (default: 490)")
