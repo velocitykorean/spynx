@@ -33,7 +33,7 @@ CHANNEL_NAME = os.getenv("CHANNEL_NAME", "Sypionx")
 VISUALIZER_ENGINE = os.getenv("VISUALIZER_ENGINE", "core_only").lower()
 VISUALIZER_COLOR = os.getenv("VISUALIZER_COLOR", "auto")
 VISUALIZER_STYLE = os.getenv("VISUALIZER_STYLE", "bars").lower()
-VISUALIZER_DIAMETER = int(os.getenv("VISUALIZER_DIAMETER", "490"))
+VISUALIZER_DIAMETER = int(os.getenv("VISUALIZER_DIAMETER", "688"))
 
 
 def get_audio_duration(audio_path):
@@ -341,6 +341,8 @@ def process_single_song(image_path, audio_path, song_filename, display_name=None
                 color=VISUALIZER_COLOR,
                 channel_name=CHANNEL_NAME,
                 song_title=text_name,
+                target_width=1920,
+                target_height=1080,
             )
             return output_path
         elif VISUALIZER_ENGINE in ["synced_viz", "ncs_viz", "hybrid"]:
