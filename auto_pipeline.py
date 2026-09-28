@@ -100,19 +100,30 @@ def run_pipeline():
 
     print(f"\nStep 3 complete: Video + thumbnail created")
 
-    # Step 4: Upload to YouTube
-    print("\nSTEP 4: Uploading to YouTube...")
+    # Step 4: Upload to Platforms (YouTube & Facebook)
+    print("\nSTEP 4: Uploading to Platforms...")
     from publish_youtube import upload_to_youtube
 
     tags = ['music', 'song', 'cinematic', 'emotional', 'pop', 'newmusic',
             'femalevocals', 'piano', 'dreamy', 'romantic']
 
+    yt_upload_success = False
     try:
         result = upload_to_youtube(video_path, title, description, tags=tags, category_id='10')
-        upload_success = True
+        yt_upload_success = True
     except Exception as e:
         print(f"YouTube upload failed: {e}")
-        upload_success = False
+
+    fb_upload_success = False
+    try:
+        from publish_facebook import upload_to_facebook
+        print("\n[facebook] Uploading to Facebook Page...")
+        fb_result = upload_to_facebook(video_path, title, description)
+        fb_upload_success = True
+    except Exception as e:
+        print(f"Facebook upload failed: {e}")
+
+    upload_success = yt_upload_success or fb_upload_success
 
     # Step 5: Record as published
     print("\nSTEP 5: Recording song as published...")
@@ -120,6 +131,8 @@ def run_pipeline():
         "title": title,
         "description": description,
         "song_index": song_index,
+        "uploaded_youtube": yt_upload_success,
+        "uploaded_facebook": fb_upload_success,
         "uploaded": upload_success
     })
 
