@@ -58,9 +58,38 @@ def get_authenticated_service():
     return build('youtube', 'v3', credentials=creds)
 
 
-def upload_to_youtube(video_path, title, description, tags=None, category_id='10'):
+def set_video_thumbnail(youtube, video_id, thumbnail_path):
     """
-    Upload video to YouTube.
+    Upload and set custom thumbnail for a YouTube video.
+    Note: Requires YouTube channel to be verified for custom thumbnails.
+    """
+    if not thumbnail_path or not os.path.exists(thumbnail_path):
+        print(f"[youtube] Thumbnail file not found: {thumbnail_path}")
+        return None
+
+    print(f"[youtube] Uploading thumbnail: {thumbnail_path}")
+    mimetype = 'image/png' if str(thumbnail_path).lower().endswith('.png') else 'image/jpeg'
+    try:
+        media = MediaFileUpload(
+            str(thumbnail_path),
+            mimetype=mimetype,
+            resumable=False
+        )
+        request = youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=media
+        )
+        response = request.execute()
+        print(f"[youtube] Thumbnail successfully set for video: {video_id}")
+        return response
+    except Exception as e:
+        print(f"[youtube] WARNING: Failed to set thumbnail: {e}")
+        return None
+
+
+def upload_to_youtube(video_path, title, description, tags=None, category_id='10', thumbnail_path=None):
+    """
+    Upload video to YouTube and optionally set custom thumbnail.
     Category 10 = Music
     """
     if tags is None:
@@ -101,27 +130,49 @@ def upload_to_youtube(video_path, title, description, tags=None, category_id='10
         if status:
             print(f"[youtube] Progress: {int(status.progress() * 100)}%")
 
-    print(f"[youtube] Uploaded! Video ID: {response['id']}")
-    print(f"[youtube] URL: https://youtube.com/watch?v={response['id']}")
+    video_id = response['id']
+    print(f"[youtube] Uploaded! Video ID: {video_id}")
+    print(f"[youtube] URL: https://youtube.com/watch?v={video_id}")
+
+    # Upload custom thumbnail if available
+    if thumbnail_path:
+        set_video_thumbnail(youtube, video_id, thumbnail_path)
 
     return response
 
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python publish_youtube.py <video_path>")
+        print("Usage:")
+        print("  Upload video:            python publish_youtube.py <video_path> [thumbnail_path] [title] [description]")
+        print("  Set thumbnail on video:  python publish_youtube.py --set-thumbnail <video_id> <thumbnail_path>")
         sys.exit(1)
 
+    if sys.argv[1] == '--set-thumbnail':
+        if len(sys.argv) < 4:
+            print("Usage: python publish_youtube.py --set-thumbnail <video_id> <thumbnail_path>")
+            sys.exit(1)
+        video_id = sys.argv[2]
+        thumb_file = sys.argv[3]
+        if not os.path.exists(thumb_file):
+            print(f"[youtube] Thumbnail not found: {thumb_file}")
+            sys.exit(1)
+        youtube = get_authenticated_service()
+        set_video_thumbnail(youtube, video_id, thumb_file)
+        sys.exit(0)
+
     video_file = sys.argv[1]
+    thumb_file = sys.argv[2] if len(sys.argv) > 2 and os.path.exists(sys.argv[2]) else None
+    title = sys.argv[3] if len(sys.argv) > 3 else "New Music Release"
+    description = sys.argv[4] if len(sys.argv) > 4 else "#music #newmusic #song"
+
     if not os.path.exists(video_file):
         print(f"[youtube] Video not found: {video_file}")
         sys.exit(1)
 
-    title = "New Music Release"
-    description = "#music #newmusic #song"
-
     try:
-        upload_to_youtube(video_file, title, description)
+        upload_to_youtube(video_file, title, description, thumbnail_path=thumb_file)
     except Exception as e:
         print(f"[youtube] Upload failed: {e}")
         sys.exit(1)
+

@@ -95,8 +95,17 @@ def run_pipeline():
 
     # Check for thumbnail
     thumb_path = video_path.replace('.mp4', '_thumb.jpg')
-    if os.path.exists(thumb_path):
+    if not os.path.exists(thumb_path):
+        alt_thumb = video_path.replace('.mp4', '_thumb.png')
+        if os.path.exists(alt_thumb):
+            thumb_path = alt_thumb
+        else:
+            thumb_path = None
+
+    if thumb_path:
         print(f"Thumbnail: {thumb_path}")
+    else:
+        print(f"Warning: No matching thumbnail file found for {video_path}")
 
     print(f"\nStep 3 complete: Video + thumbnail created")
 
@@ -108,9 +117,19 @@ def run_pipeline():
             'femalevocals', 'piano', 'dreamy', 'romantic']
 
     yt_upload_success = False
+    yt_video_id = None
     try:
-        result = upload_to_youtube(video_path, title, description, tags=tags, category_id='10')
+        result = upload_to_youtube(
+            video_path,
+            title,
+            description,
+            tags=tags,
+            category_id='10',
+            thumbnail_path=thumb_path
+        )
         yt_upload_success = True
+        if isinstance(result, dict) and 'id' in result:
+            yt_video_id = result['id']
     except Exception as e:
         print(f"YouTube upload failed: {e}")
 
@@ -127,14 +146,19 @@ def run_pipeline():
 
     # Step 5: Record as published
     print("\nSTEP 5: Recording song as published...")
-    mark_as_published(song_filename, {
+    metadata_entry = {
         "title": title,
         "description": description,
         "song_index": song_index,
         "uploaded_youtube": yt_upload_success,
         "uploaded_facebook": fb_upload_success,
         "uploaded": upload_success
-    })
+    }
+    if yt_video_id:
+        metadata_entry["youtube_video_id"] = yt_video_id
+        metadata_entry["youtube_url"] = f"https://youtube.com/watch?v={yt_video_id}"
+
+    mark_as_published(song_filename, metadata_entry)
 
     # Move published video to archive
     published_dir = "Published_Videos"
@@ -145,8 +169,12 @@ def run_pipeline():
         dest_path = os.path.join(published_dir, os.path.basename(video_path))
         shutil.move(video_path, dest_path)
         print(f"Moved video to {dest_path}")
+        if thumb_path and os.path.exists(thumb_path):
+            thumb_dest = os.path.join(published_dir, os.path.basename(thumb_path))
+            shutil.move(thumb_path, thumb_dest)
+            print(f"Moved thumbnail to {thumb_dest}")
     except Exception as e:
-        print(f"Failed to move video: {e}")
+        print(f"Failed to move video/thumbnail: {e}")
 
     print("\n" + "=" * 60)
     print("PIPELINE COMPLETE")
