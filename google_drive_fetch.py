@@ -5,7 +5,6 @@ Matches files by sorted position (1st audio = 1st image, etc.)
 Supports Weighted Random Repost Mode when all songs have been published once.
 """
 import os
-import re
 import json
 import sys
 import random
@@ -29,49 +28,6 @@ ALLOW_REPOST = os.getenv("ALLOW_REPOST", "true").lower() == "true"
 PUBLISHED_LOG = "published_songs.json"
 
 
-def normalize_song_title(filename):
-    """
-    Extract canonical song title from filename:
-    Strips leading track numbers (e.g. '01 - ', '17 - ', '12. ')
-    and extensions, punctuation, and extra whitespace.
-    Example: '17 - When the World Goes Quiet.mp3' -> 'when the world goes quiet'
-    """
-    base = os.path.splitext(os.path.basename(filename))[0].strip()
-    clean = re.sub(r'^\s*\d+[\s\.\-_]+', '', base).strip()
-    clean = clean.replace('_', ' ').replace('-', ' ').strip()
-    return re.sub(r'\s+', ' ', clean).lower()
-
-
-def get_publication_history():
-    """
-    Reads published_songs.json and returns:
-    - title_counts: dict {canonical_title: count}
-    - recent_titles: list of canonical titles in chronological publish order
-    - published_filenames: set of exact lowercase filenames already published
-    """
-    title_counts = {}
-    recent_titles = []
-    published_filenames = set()
-
-    if os.path.exists(PUBLISHED_LOG):
-        with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
-            try:
-                data = json.load(f)
-                for item in data:
-                    raw_name = item.get('song_name', '').strip()
-                    if not raw_name:
-                        continue
-                    published_filenames.add(raw_name.lower())
-                    canon = normalize_song_title(raw_name)
-                    if canon:
-                        title_counts[canon] = title_counts.get(canon, 0) + 1
-                        recent_titles.append(canon)
-            except json.JSONDecodeError:
-                pass
-
-    return title_counts, recent_titles, published_filenames
-
-
 def get_published_songs():
     """Get list of already published song names."""
     if os.path.exists(PUBLISHED_LOG):
@@ -85,9 +41,20 @@ def get_published_songs():
 
 
 def get_repost_counts():
-    """Count how many times each canonical song title has been published."""
-    title_counts, _, _ = get_publication_history()
-    return title_counts
+    """Count how many times each song has been published."""
+    if os.path.exists(PUBLISHED_LOG):
+        with open(PUBLISHED_LOG, 'r', encoding='utf-8') as f:
+            try:
+                data = json.load(f)
+                counts = {}
+                for item in data:
+                    sname = item.get('song_name', '').strip().lower()
+                    if sname:
+                        counts[sname] = counts.get(sname, 0) + 1
+                return counts
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
 
 def get_drive_service():
@@ -160,18 +127,11 @@ def download_file(service, file_info, local_path):
         return False
 
 
-def get_next_unpublished_pair(published=None):
+def get_next_unpublished_pair(published):
     """
-    Smart Weighted Song Selection & Daily Switching:
-    1. Normalizes song titles so duplicate numbered files (e.g. 11 vs 12) share history.
-    2. Recency Cooldown: Never selects a song published in the last 5 days.
-    3. Weighted Selection:
-       - Never-published song titles get highest weight (1000).
-       - Songs published 1 time get lower weight (100).
-       - Songs published 2+ times get exponentially decaying weight.
-       - Exact files already published receive a penalty.
-    4. Random weighted sampling switches up songs every day so daily releases stay diverse.
-    5. Seamlessly recycles songs once the full library has been published once.
+    Find next unpublished song by matching audio + image by sorted position.
+    If all songs have been published once, uses Weighted Random Repost Selection
+    to pair a random song with a random background image so daily publishing never stops.
     """
     service = get_drive_service()
     if not service:
@@ -192,105 +152,81 @@ def get_next_unpublished_pair(published=None):
 
     print(f"Found {len(image_files)} image file(s) in Google Drive.")
 
-    title_counts, recent_titles, published_filenames = get_publication_history()
-    print(f"\nPublication history: {len(published_filenames)} upload(s) recorded, {len(title_counts)} unique songs.")
+    # Match by position: audio[i] pairs with image[i]
+    pair_count = min(len(audio_files), len(image_files))
 
-    # Recency Cooldown: exclude songs from recent uploads to prevent back-to-back repeats
-    COOLDOWN_SIZE = 5
-    cooldown_set = set(recent_titles[-COOLDOWN_SIZE:]) if recent_titles else set()
-    if cooldown_set:
-        print(f"Recent cooldown (blocked from next upload): {cooldown_set}")
+    published_lower = [p.lower().strip() for p in published]
+    print(f"\nAlready published ({len(published_lower)} songs): {published}")
 
-    # Build candidates from available audio files
-    all_candidates = []
-    for i in range(len(audio_files)):
-        raw_name = audio_files[i]['name'].strip()
-        canon = normalize_song_title(raw_name)
-        cnt = title_counts.get(canon, 0)
-        is_exact = raw_name.lower() in published_filenames
-        all_candidates.append({
-            'index': i,
-            'audio_info': audio_files[i],
-            'raw_name': raw_name,
-            'canon_title': canon,
-            'pub_count': cnt,
-            'is_exact': is_exact
-        })
+    # Phase 1: Try finding an unpublished song
+    for i in range(pair_count):
+        audio_info = audio_files[i]
+        image_info = image_files[i]
+        song_name = audio_info['name'].strip()
 
-    # Filter candidates: first try excluding cooldown songs
-    eligible = [c for c in all_candidates if c['canon_title'] not in cooldown_set]
-    if not eligible:
-        print("Notice: Cooldown exhausted all songs, relaxing cooldown filter.")
-        eligible = all_candidates
-
-    # Compute weights:
-    # 0 previous publications -> 1000
-    # 1 previous publication  -> 100
-    # 2 previous publications -> 20
-    # 3+ publications        -> max(1, 1000 // (3 ** min(count, 6)))
-    # Exact file already published gets 10x penalty
-    weights = []
-    for c in eligible:
-        cnt = c['pub_count']
-        if cnt == 0:
-            w = 1000
-        elif cnt == 1:
-            w = 100
-        elif cnt == 2:
-            w = 20
-        else:
-            w = max(1, 1000 // (3 ** min(cnt, 6)))
-
-        if c['is_exact']:
-            w = max(1, w // 10)
-        weights.append(w)
-
-    print(f"\nSelecting from {len(eligible)} eligible songs using Weighted Random Switching...")
-
-    # Selection with download retry
-    while eligible:
-        chosen = random.choices(eligible, weights=weights, k=1)[0]
-        chosen_idx = chosen['index']
-        audio_info = chosen['audio_info']
-        song_name = chosen['raw_name']
-
-        print(f"\n🎲 Selected song [{chosen_idx + 1}]: '{song_name}' (Canon: '{chosen['canon_title']}', Published {chosen['pub_count']}x)")
+        if song_name.lower() in published_lower:
+            print(f"Skipping [{i+1}] {song_name} - already published")
+            continue
 
         # Download audio
         Path(LOCAL_AUDIO_DIR).mkdir(parents=True, exist_ok=True)
         audio_path = os.path.join(LOCAL_AUDIO_DIR, audio_info['name'])
-        print(f"Downloading audio: {audio_info['name']}")
+        print(f"\nDownloading audio: {audio_info['name']}")
         if not download_file(service, audio_info, audio_path):
-            idx = eligible.index(chosen)
-            eligible.pop(idx)
-            weights.pop(idx)
             continue
-
-        # Choose image:
-        # If matching position image exists and song is unpublished, use it; otherwise pick random image
-        if chosen_idx < len(image_files) and not chosen['is_exact']:
-            image_info = image_files[chosen_idx]
-        else:
-            image_info = random.choice(image_files)
 
         # Download image
         Path(LOCAL_IMAGE_DIR).mkdir(parents=True, exist_ok=True)
         image_path = os.path.join(LOCAL_IMAGE_DIR, image_info['name'])
         print(f"Downloading image: {image_info['name']}")
         if not download_file(service, image_info, image_path):
-            idx = eligible.index(chosen)
-            eligible.pop(idx)
-            weights.pop(idx)
             continue
 
-        song_index = chosen_idx + 1
-        print(f"\n✅ Ready for pipeline: '{song_name}' paired with Image '{image_info['name']}'")
+        song_index = i + 1
+        print(f"\n✅ Selected NEW unpublished pair {song_index}: {song_name} with Image: {image_info['name']}")
         return audio_path, image_path, song_index
 
-    print("\nFailed to download any candidate song.")
+    # Phase 2: All songs have been published - REPOST / RECYCLE MODE
+    if ALLOW_REPOST:
+        print("\n🔄 REPOST MODE: All songs published once. Selecting weighted random song + random image...")
+        repost_counts = get_repost_counts()
+
+        # Build weighted choices (songs posted fewer times get higher weight)
+        weighted_indices = []
+        weights = []
+        for i in range(pair_count):
+            sname = audio_files[i]['name'].strip().lower()
+            count = repost_counts.get(sname, 0)
+            weight = max(1, 1000 // (3 ** min(count, 6)))
+            weighted_indices.append(i)
+            weights.append(weight)
+
+        selected_idx = random.choices(weighted_indices, weights=weights, k=1)[0]
+
+        # Pick random background image from available images
+        random_image_info = random.choice(image_files)
+        selected_audio_info = audio_files[selected_idx]
+
+        song_name = selected_audio_info['name']
+        print(f"  🎲 Selected for repost: Song #{selected_idx + 1} '{song_name}' with Image '{random_image_info['name']}'")
+
+        # Download audio
+        Path(LOCAL_AUDIO_DIR).mkdir(parents=True, exist_ok=True)
+        audio_path = os.path.join(LOCAL_AUDIO_DIR, selected_audio_info['name'])
+        if not download_file(service, selected_audio_info, audio_path):
+            return None
+
+        # Download image
+        Path(LOCAL_IMAGE_DIR).mkdir(parents=True, exist_ok=True)
+        image_path = os.path.join(LOCAL_IMAGE_DIR, random_image_info['name'])
+        if not download_file(service, random_image_info, image_path):
+            return None
+
+        return audio_path, image_path, selected_idx + 1
+
+    print("\nAll songs have been published (repost disabled).")
     return None
 
 
 if __name__ == "__main__":
     get_next_unpublished_pair(get_published_songs())
-
