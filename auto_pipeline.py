@@ -118,20 +118,24 @@ def run_pipeline():
 
     yt_upload_success = False
     yt_video_id = None
-    try:
-        result = upload_to_youtube(
-            video_path,
-            title,
-            description,
-            tags=tags,
-            category_id='10',
-            thumbnail_path=thumb_path
-        )
-        yt_upload_success = True
-        if isinstance(result, dict) and 'id' in result:
-            yt_video_id = result['id']
-    except Exception as e:
-        print(f"YouTube upload failed: {e}")
+    upload_yt = os.getenv("UPLOAD_YOUTUBE", "true").lower() not in ("false", "0", "no")
+    if not upload_yt:
+        print("\n[youtube] Alternate-day schedule: Skipping YouTube upload today (Facebook will still publish).")
+    else:
+        try:
+            result = upload_to_youtube(
+                video_path,
+                title,
+                description,
+                tags=tags,
+                category_id='10',
+                thumbnail_path=thumb_path
+            )
+            yt_upload_success = True
+            if isinstance(result, dict) and 'id' in result:
+                yt_video_id = result['id']
+        except Exception as e:
+            print(f"YouTube upload failed: {e}")
 
     fb_upload_success = False
     try:
