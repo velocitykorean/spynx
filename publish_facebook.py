@@ -242,7 +242,8 @@ def upload_video_direct(video_path, title, description, page_id, access_token):
 def upload_to_facebook(video_path, title, description):
     """
     Upload a video to the configured Facebook Page.
-    Uses resumable chunked upload with retries, falling back to direct upload only for small files.
+    For SPYNX music visualizer videos (~150 MB, 3 mins), uses direct single-request multipart streaming
+    for EXACTLY 1 API CALL. Falls back to 50MB resumable upload if direct upload fails.
     """
     page_id, access_token = get_facebook_credentials()
 
@@ -251,16 +252,16 @@ def upload_to_facebook(video_path, title, description):
 
     file_size = os.path.getsize(video_path)
 
-    try:
-        return upload_video_resumable(video_path, title, description, page_id, access_token)
-    except Exception as e:
-        print(f"[facebook] Resumable upload encountered error: {e}")
-        if file_size < 100 * 1024 * 1024:
-            print(f"[facebook] Attempting direct upload fallback for small file ({file_size / (1024 * 1024):.1f} MB)...")
+    # 1. Primary Method: Direct single-call streaming (EXACTLY 1 API call for files < 1 GB)
+    if file_size < 1000 * 1024 * 1024:
+        try:
+            print(f"[facebook] Uploading via direct single-request stream (EXACTLY 1 API call, {file_size / (1024 * 1024):.1f} MB)...")
             return upload_video_direct(video_path, title, description, page_id, access_token)
-        else:
-            print(f"[facebook] File is {file_size / (1024 * 1024):.1f} MB. Direct upload cannot be used for files > 100MB (Meta will reject with HTTP 413).")
-            raise
+        except Exception as e_direct:
+            print(f"[facebook] Direct upload encountered issue ({e_direct}), falling back to 50MB resumable chunked upload...")
+
+    # 2. Resumable chunked upload fallback
+    return upload_video_resumable(video_path, title, description, page_id, access_token)
 
 
 if __name__ == '__main__':
