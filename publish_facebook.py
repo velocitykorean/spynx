@@ -22,9 +22,9 @@ if sys.platform == 'win32':
 load_dotenv()
 
 GRAPH_API_VERSION = "v21.0"
-# 50 MB chunks: Meta Graph API's official standard chunk size (52,428,800 bytes).
+# 80 MB chunks: Maximum throughput while staying safely below Meta edge proxy's 100 MB HTTP 413 limit.
 # Keeps total requests to ~50 for a 2.5 GB video while avoiding HTTP 413 body size limits.
-CHUNK_SIZE = 50 * 1024 * 1024
+CHUNK_SIZE = 80 * 1024 * 1024
 
 
 def get_facebook_credentials():
@@ -301,7 +301,7 @@ def upload_to_facebook(video_path, title, description):
                 print(f"[facebook] Uploading via direct single-request stream (EXACTLY 1 API call, {file_size / (1024 * 1024):.1f} MB)...")
                 return upload_video_direct(fb_video_path, title, description, page_id, access_token)
             except Exception as e_direct:
-                print(f"[facebook] Direct upload encountered issue ({e_direct}), falling back to 50MB resumable chunked upload...")
+                print(f"[facebook] Direct upload encountered issue ({e_direct}), falling back to 80MB resumable chunked upload...")
 
         # Resumable chunked upload fallback
         return upload_video_resumable(fb_video_path, title, description, page_id, access_token)
