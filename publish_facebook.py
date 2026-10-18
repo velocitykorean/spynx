@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import time
+import subprocess
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -118,8 +119,7 @@ def upload_video_resumable(video_path, title, description, page_id, access_token
     print(f"[facebook] Session initialized (Session ID: {upload_session_id[:10]}...)")
 
     # Phase 2: TRANSFER CHUNKS
-    meta_end = int(start_resp.get("end_offset", 0))
-    chunk_size = min(CHUNK_SIZE, meta_end - start_offset) if meta_end > start_offset else CHUNK_SIZE
+    chunk_size = CHUNK_SIZE
     max_chunk_retries = 5
 
     with open(video_path, "rb") as f:
@@ -151,12 +151,8 @@ def upload_video_resumable(video_path, title, description, page_id, access_token
                     if t_resp.status_code == 200:
                         t_data = t_resp.json()
                         new_start = int(t_data.get("start_offset", start_offset + len(chunk_data)))
-                        new_end = int(t_data.get("end_offset", 0))
-                        if new_end > new_start:
-                            chunk_size = min(CHUNK_SIZE, new_end - new_start)
-                        else:
-                            chunk_size = CHUNK_SIZE
                         start_offset = new_start
+                        chunk_size = CHUNK_SIZE
                         chunk_success = True
                         time.sleep(1)  # 1-second pause to prevent hammering the API
                         break
@@ -239,29 +235,83 @@ def upload_video_direct(video_path, title, description, page_id, access_token):
     return data
 
 
+def create_facebook_optimized_video(input_path):
+    """
+    Creates an optimized lightweight video specifically for Facebook upload (< 80 MB)
+    so that Facebook can be published in a SINGLE HTTP streaming request (1 API call).
+    The original full-quality video is preserved for YouTube.
+    """
+    if not os.path.exists(input_path):
+        return input_path
+
+    file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
+    if file_size_mb <= 80:
+        return input_path
+
+    output_path = os.path.splitext(input_path)[0] + "_fb_optimized.mp4"
+    print(f"[facebook] Generating optimized Facebook video copy from {os.path.basename(input_path)} ({file_size_mb:.1f} MB)...")
+    start_t = time.time()
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        output_path
+    ]
+
+    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if res.returncode == 0 and os.path.exists(output_path):
+        out_mb = os.path.getsize(output_path) / (1024 * 1024)
+        elapsed = time.time() - start_t
+        print(f"[facebook] Optimization complete in {elapsed:.1f}s: {file_size_mb:.1f} MB -> {out_mb:.1f} MB ({((file_size_mb - out_mb) / file_size_mb) * 100:.1f}% reduction)")
+        return output_path
+    else:
+        print("[facebook] Note: Optimization failed or skipped, using original video.")
+        return input_path
+
+
 def upload_to_facebook(video_path, title, description):
     """
     Upload a video to the configured Facebook Page.
-    For SPYNX music visualizer videos (~150 MB, 3 mins), uses direct single-request multipart streaming
-    for EXACTLY 1 API CALL. Falls back to 50MB resumable upload if direct upload fails.
+    1. Creates a lightweight optimized copy (<80 MB) specifically for Facebook.
+    2. Uploads via direct single-call streaming (EXACTLY 1 API call).
+    3. Cleans up the temporary optimized copy immediately after upload.
+    4. YouTube retains the original uncompressed master file.
     """
     page_id, access_token = get_facebook_credentials()
 
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    file_size = os.path.getsize(video_path)
+    # Generate Facebook-optimized copy
+    fb_video_path = create_facebook_optimized_video(video_path)
+    is_temp = (fb_video_path != video_path)
 
-    # 1. Primary Method: Direct single-call streaming (EXACTLY 1 API call for files < 1 GB)
-    if file_size < 1000 * 1024 * 1024:
-        try:
-            print(f"[facebook] Uploading via direct single-request stream (EXACTLY 1 API call, {file_size / (1024 * 1024):.1f} MB)...")
-            return upload_video_direct(video_path, title, description, page_id, access_token)
-        except Exception as e_direct:
-            print(f"[facebook] Direct upload encountered issue ({e_direct}), falling back to 50MB resumable chunked upload...")
+    try:
+        file_size = os.path.getsize(fb_video_path)
 
-    # 2. Resumable chunked upload fallback
-    return upload_video_resumable(video_path, title, description, page_id, access_token)
+        # Primary Method: Direct single-call streaming (EXACTLY 1 API call for files < 100 MB)
+        if file_size < 100 * 1024 * 1024:
+            try:
+                print(f"[facebook] Uploading via direct single-request stream (EXACTLY 1 API call, {file_size / (1024 * 1024):.1f} MB)...")
+                return upload_video_direct(fb_video_path, title, description, page_id, access_token)
+            except Exception as e_direct:
+                print(f"[facebook] Direct upload encountered issue ({e_direct}), falling back to 50MB resumable chunked upload...")
+
+        # Resumable chunked upload fallback
+        return upload_video_resumable(fb_video_path, title, description, page_id, access_token)
+    finally:
+        if is_temp and os.path.exists(fb_video_path):
+            try:
+                os.remove(fb_video_path)
+                print(f"[facebook] Cleaned up temporary optimized file: {fb_video_path}")
+            except Exception as e_clean:
+                print(f"[facebook] Note: could not remove temporary file: {e_clean}")
 
 
 if __name__ == '__main__':
