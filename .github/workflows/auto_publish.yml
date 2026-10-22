@@ -147,7 +147,8 @@ jobs:
           if ! git diff --staged --quiet; then
             git commit -m "Update published songs log [skip ci]"
             for i in 1 2 3 4 5; do
-              git pull origin main --rebase && git push origin main && break || sleep 5
+              git pull origin main --rebase && git pull --rebase origin main
+            git push origin main && break || sleep 5
             done
             echo "Committed and pushed published_songs.json successfully"
           else
