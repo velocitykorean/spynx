@@ -3,7 +3,7 @@ name: Auto Publish Songs to YouTube
 on:
   schedule:
     # Run once daily at 8:00 AM UTC
-    - cron: '0 8 * * *'
+    - cron: '33 7 * * *'
   workflow_dispatch:
     inputs:
       upload_youtube:
@@ -126,15 +126,21 @@ jobs:
           echo "Audio Folder: $GOOGLE_DRIVE_AUDIO_FOLDER_ID"
           echo "Image Folder: $GOOGLE_DRIVE_IMAGE_FOLDER_ID"
           echo "Upload to YouTube today: $UPLOAD_YOUTUBE"
-          python auto_pipeline.py
-          exit_code=$?
-
-          if [ $exit_code -ne 0 ]; then
-            echo "Pipeline failed with exit code $exit_code"
-            exit $exit_code
-          fi
-
-          echo "Pipeline completed successfully"
+          max_retries=2
+          count=0
+          until [ $count -ge $max_retries ]
+          do
+            echo ">>> Execution attempt $((count+1)) of $max_retries..."
+            if python auto_pipeline.py; then
+              echo "Pipeline completed successfully"
+              exit 0
+            fi
+            count=$((count+1))
+            echo "Attempt $count failed. Retrying in 15 seconds..."
+            sleep 15
+          done
+          echo "Pipeline failed after $max_retries attempts."
+          exit 1
 
       - name: Commit published songs log
         if: always()
